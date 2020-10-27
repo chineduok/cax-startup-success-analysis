@@ -1,0 +1,269 @@
+---
+title: "Business Analytics for Beginners Using R - Part I"
+author: "Chinedu Okechukwu"
+date: "10/26/2020"
+output:
+  pdf_document: default
+  PDF_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Problem Statement
+
+Investors need to move beyond the value-proposition of start-up companies in determining their success or failure to inform their investing strategies. As more information and data on start-ups is now available, investors want to discover factors from this information that affect the success of these start-up companies.
+
+The primary objective of this data analytics project is to identify these factors or attributes of successful start-up companies by performing some analytical procedures on many informational attributes acquired on 472 start-up companies. The aim is to get the data into a more useable format to perform some form of exploration and statistical tests.
+
+```{r prepocessing, include=FALSE}
+library(dplyr)
+library(Amelia)
+startup<- read.csv(file="data/CAX_Startup_Data.csv", header=TRUE,as.is=T)
+
+dim(startup)
+startup[startup=="No Info"]<- NA
+startup[startup==""]<- NA
+
+NA_plot <- missmap(startup, legend = T, col = c('yellow','black'))
+save(NA_plot,file = "fig/missing_value_plt.fig")
+```
+
+## Section 1: How the data was treated including missing value?
+
+The csv file read to R contained 472 observation of 116 variables on start-up companies. Majority of the variables were classified as characters with a few as integers. 
+
+Data frame had 264 rows of incomplete cases, i.e rows with NA values. Data also had values with “No Info” or blanks that needs to be changed to NA values. These values where replaced with NAs which increased the number of rows with incomplete cases to 456.The missing value plot is shown in Figure below.
+
+```{r pressure, echo=FALSE}
+missmap(startup, legend = T, col = c('yellow','black'))
+```
+__Fig 1 Missing Value Plot__
+
+
+I handled the 15% missing value as follows:  
+
+1. I removed variables that had more than 40% missing values which resulted in the removal of the following 3 variables I calculated the proportion of missing values for each variable and set a rule to keep variables that have 40% or less missing values. The following columns(variables were removed as a result)
+
+```{r removal of variables with >40% NAs, include=FALSE}
+nrow(startup[!complete.cases(startup),])
+
+# converting column as date.....
+startup$Est..Founding.Date <- as.Date(startup$Est..Founding.Date, "%m/%d/%Y")
+startup$Last.Funding.Date <- as.Date(startup$Last.Funding.Date, "%m/%d/%Y")
+
+# display column header of data
+colnames(startup) 
+
+# noting columns that needs to be converted to numeric
+col<- c(3:5,10,11,18:23,25,61,66,72,74,88,92,94:96,98,99,102:116)
+
+# using for loop to convert column as numeric
+for(i in col)
+{
+  startup[,i]<-as.numeric(startup[,i])
+}
+
+# Percent missing value for each variable
+mis_val<-sapply(startup, function(x) sum(is.na(x)))
+percent_mis<-as.data.frame(round((mis_val/nrow(startup))*100,1))
+
+
+
+name<-row.names(percent_mis)
+pcnt_mis_var<-cbind(name,percent_mis)
+row.names(pcnt_mis_var)<-NULL
+colnames(pcnt_mis_var)<-c("variable","Percent.Missing")
+
+var_dropped<-pcnt_mis_var%>%filter(percent_mis>40)
+
+save(var_dropped, file = "fig/variables_40%_nas.fig")
+# keeping only variables with less than 40% missing
+removed_variable <- as.data.frame(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing<=40)])
+new_var<-as.character(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing<=40)])
+new_startup<-startup[new_var]
+
+
+```
+
+```{r echo=FALSE}
+var_dropped
+```
+
+2.  I dropped observation with more than 40% of the variables missing
+
+3.  I imputed the remaining missing values with the median for numeric variables and the mode for categorical variables
+
+
+
+
+```{r include=FALSE}
+ncol(startup) # 116
+ncol(new_startup)#113
+
+
+# separate data frame for more than 40% missing
+other_var<-as.character(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing>40)])
+other_data<-startup[other_var]
+
+# Percent missing value for observations
+new_startup <- new_startup[which(rowMeans(!is.na(new_startup))>.4), ]
+
+# writing new data as csv file
+save(new_startup,file = "rda/startup2_NA.rda")
+```
+
+
+##  Section 2: Details of additional features created
+
+I created two additional variables- Investor.count from as a sum of the total number investors for each startup and “Industry. Count” as the total number of industries a startup belongs to.I then dropped their originating variables along with the following:  
+. Company_Name  
+.	Short.Description.of.company.profile  
+.	Est..Founding.Date & Last.Funding.Date (Age of company is already in the data)  
+.	Specialization.of.highest.education- (multiple values but highest education will suffice)  
+.	Time.to.maturity.of.technology..in.years (this had only one value, hence low variability)  
+
+
+
+##  Section 3: Graphical presentation of your exploration and its interpretation
+
+
+The outcome variable for the data frame is categorical and the graphs plotted were boxplots and histograms to understand visually the distribution of the startups and to check the distance of outliers. 
+
+```{r}
+library(ggplot2)
+char_df <-read.csv('rda/char_df_processed.rda')
+cnt_df <- read.csv('rda/cnt_var_processed.rda')
+
+
+# boxplot of employee count
+boxplot(cnt_df$Employee.Count, main="box plot of employee count", 
+        ylab="Employee count")
+
+# histogram with black outline, white fill and median line
+
+ggplot(cnt_df, aes(x=Employee.Count))+
+  geom_histogram(binwidth=5, colour="black", fill="white")+
+  geom_vline(aes(xintercept=median(Employee.Count, na.rm=T)),   
+             color="red", linetype="dashed", size=1)+
+  ggtitle("Histogram of Employee count")+
+  xlab("Employee Count") + 
+  ylab("Frequency")+
+  theme_light()
+colnames(cnt_df)
+
+# Plot univariate distributions of independent variables using facet wrap
+names(cnt_df)
+cnt_df%>%
+  select(c(1:6))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+
+cnt_df%>%
+  select(c(7:12))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+cnt_df%>%
+  select(c(13:18))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+  
+cnt_df%>%
+  select(c(19:24))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+
+cnt_df%>%
+  select(c(25:30))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+
+cnt_df%>%
+  select(c(31:36))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+cnt_df%>%
+  select(c(37:41))%>%
+  gather()%>%
+  ggplot(aes(value,fill=value))+
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram()+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed")
+#colnames(cnt_df[c(37:41)])
+# box plot to see differnce in mean of team size w.r.t two categories of dependent
+ggplot(cnt_df, aes(x=Dependent.Company.Status,y=Team.size.all.employees, 
+                   fill=Dependent.Company.Status)) + 
+  geom_boxplot()
+
+# Creating boxplots of continuous variables using facet wrap
+cnt_df%>%
+  select(c(1:6,42))%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  ggplot(aes(x = value,y = Dependent.Company.Status, 
+             fill=Dependent.Company.Status))+
+  geom_boxplot()+
+  facet_wrap(~var,scales = 'free') +
+  theme_bw()
+
+cnt_df%>%
+  select(c(7:12,42))%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  ggplot(aes(x = value,y = Dependent.Company.Status, 
+             fill=Dependent.Company.Status))+
+  geom_boxplot()+
+  facet_wrap(~var,scales = 'free') +
+  theme_bw()
+
+cnt_df%>%
+  select(c(13:18,42))%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  ggplot(aes(x = value,y = Dependent.Company.Status, 
+             fill=Dependent.Company.Status))+
+  geom_boxplot()+
+  facet_wrap(~var,scales = 'free') +
+  theme_bw()
+
+cnt_df%>%
+  select(c(19:24,42))%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  ggplot(aes(x = value,y = Dependent.Company.Status, 
+             fill=Dependent.Company.Status))+
+  geom_boxplot()+
+  facet_wrap(~var,scales = 'free') +
+  theme_bw()
+
+cnt_df%>%
+  select(c(25:30,42))%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  ggplot(aes(x = value,y = Dependent.Company.Status, 
+             fill=Dependent.Company.Status))+
+  geom_boxplot()+
+  facet_wrap(~var,scales = 'free') +
+  theme_bw()
