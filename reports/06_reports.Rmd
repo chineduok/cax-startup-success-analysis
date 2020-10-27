@@ -1,0 +1,88 @@
+---
+title: "Business Analytics for Beginners Using R - Part I"
+author: "Chinedu Okechukwu"
+date: "10/26/2020"
+output:
+  pdf_document: default
+  PDF_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Problem Statement
+
+Investors need to move beyond the value-proposition of start-up companies in determining their success or failure to inform their investing strategies. As more information and data on start-ups is now available, investors want to discover factors from this information that affect the success of these start-up companies.
+
+The primary objective of this data analytics project is to identify these factors or attributes of successful start-up companies by performing some analytical procedures on many informational attributes acquired on 472 start-up companies. The aim is to get the data into a more useable format to perform some form of exploration and statistical tests.
+
+
+```{r prepocessing}
+library(dplyr)
+library(Amelia)
+startup<- read.csv(file="data/CAX_Startup_Data.csv", header=TRUE,as.is=T)
+
+dim(startup)
+startup[startup=="No Info"]<- NA
+startup[startup==""]<- NA
+
+NA_plot <- missmap(startup, legend = T, col = c('yellow','black'))
+save(NA_plot,file = "fig/missing_value_plt.fig")
+```
+
+#Section 1: How the data was treated including missing value?
+
+The csv file read to R contained 472 observation of 116 variables on start-up companies. Majority of the variables were classified as characters with a few as integers. 
+
+Data frame had 264 rows of incomplete cases, i.e rows with NA values. Data also had values with “No Info” or blanks that needs to be changed to NA values. These values where replaced with NAs which increased the number of rows with incomplete cases to 456.The missing value plot is shown in Figure below.
+
+```{r pressure, echo=FALSE}
+missmap(startup, legend = T, col = c('yellow','black'))
+```
+I handled the 15% missing value as follows:
+1. I removed variables that had more than 40% missing values which resulted in the removal of the follwoing 3 variables I calculated the proportion of missing values for each variable and set a rule to keep variables that have 40% or less missing values. The following columns(variables were removed as a result)
+
+```{r removal of variables with >40% NAs, include=FALSE}
+nrow(startup[!complete.cases(startup),])
+
+# converting column as date.....
+startup$Est..Founding.Date <- as.Date(startup$Est..Founding.Date, "%m/%d/%Y")
+startup$Last.Funding.Date <- as.Date(startup$Last.Funding.Date, "%m/%d/%Y")
+
+# display column header of data
+colnames(startup) 
+
+# noting columns that needs to be converted to numeric
+col<- c(3:5,10,11,18:23,25,61,66,72,74,88,92,94:96,98,99,102:116)
+
+# using for loop to convert column as numeric
+for(i in col)
+{
+  startup[,i]<-as.numeric(startup[,i])
+}
+
+# Percent missing value for each variable
+mis_val<-sapply(startup, function(x) sum(is.na(x)))
+percent_mis<-as.data.frame(round((mis_val/nrow(startup))*100,1))
+
+var_dropped<-pcnt_mis_var%>%filter(percent_mis>40)
+save(var_dropped, file = "fig/variables_40%_nas.fig")
+name<-row.names(percent_mis)
+pcnt_mis_var<-cbind(name,percent_mis)
+row.names(pcnt_mis_var)<-NULL
+colnames(pcnt_mis_var)<-c("variable","Percent.Missing")
+
+# keeping only variables with less than 40% missing
+removed_variable <- as.data.frame(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing<=40)])
+new_var<-as.character(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing<=40)])
+new_startup<-startup[new_var]
+
+
+```
+
+```{r echo=FALSE}
+var_dropped
+```
+
+2. 
