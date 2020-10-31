@@ -36,7 +36,7 @@ char_df$Average.size.of.companies.worked.for.in.the.past <- as.factor(char_df$Av
 
 colnames(char_df)
 # using for loop to convert common variable vlaues as factors
-yes_no <- c(7,12,14,16:19,21,23,25,29,31:40,45,49:50,60:61,63:70)
+yes_no <- c(7,12,14,16:19,21,23,25,29,31:40,45,49:50,60:61,63:70,72)
 for(i in yes_no)
 {
   char_df[,i]<-as.factor(char_df[,i])
@@ -80,13 +80,17 @@ char_df$Investor.count<- as.factor(char_df$Investor.count)
 char_df$Dependent.Company.Status <- as.factor(char_df$Dependent.Company.Status)
 char_df$Focus.functions.of.company <- as.factor(char_df$Focus.functions.of.company)
 char_df$Industry.count <-as.factor(char_df$Industry.count)
-
+char_df$Disruptiveness.of.technology <-factor(char_df$Disruptiveness.of.technology, levels = (c("LOW","MEDIUM","HIGH")) )
 
 # function to calculate mode
 Mode <- function(x) {
   u <- unique(na.omit(x))  # took me a while had to include this as I had NAs as highest frequency
   u[which.max(tabulate(match(x, u)))]
 }
+
+
+
+
 # Filling missing values with mode
 char_df$Local.or.global.player[is.na(char_df$Local.or.global.player)]<-Mode(char_df$Local.or.global.player)
 table(char_df$Local.or.global.player)
@@ -100,6 +104,5 @@ for(char in 1:ncol(char_df)) {
   char_df[is.na(char_df[,char]),char] <-Mode(char_df[,char])
 }
 
+save(char_df,file = "rda/char_df_processed.rda")
 
-
-write.csv(char_df,"char_df_processed.csv",row.names = F)

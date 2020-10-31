@@ -24,7 +24,7 @@ quantile(cnt_df$Team.size.all.employees, probs = seq(.9, 1, by= 0.01),na.rm=T)
 quants <- seq(0,1,.1)
 
 #ussing apply function to get the quantiles of the variables in a dataframe
-qunt_df <- t(apply( cnt_df[2:38] , 2 , quantile , probs = quants , na.rm = TRUE ))
+qunt_df <- t(apply( cnt_df[2:36] , 2 , quantile , probs = quants , na.rm = TRUE ))
 qunt_df <- as.data.frame(qunt_df[c(3:4,11,15,16,20,22:24),])
 
 quantile(cnt_df$Percent_skill_Engineering, probs = seq(0.9, 1, by= 0.01),na.rm=T)
@@ -63,7 +63,7 @@ impute.med <- function(x) {
 }
 
 # Applying median value to missing values in dataframe
-nums <-c(1:38)
+nums <-c(1:36)
 cnt_df[nums] <- sapply(cnt_df[nums], function(x){
   if(any(is.na(x))){
     impute.med(x)
@@ -76,4 +76,5 @@ cnt_df[nums] <- sapply(cnt_df[nums], function(x){
 head(cnt_df)
 glimpse(cnt_df)
 
-write.csv(cnt_df,"cnt_var_processed.csv",row.names = F)
+
+save(cnt_df,file="rda/cnt_var_processed.rda")
