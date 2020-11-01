@@ -8,7 +8,6 @@ output:
   html_document:
     df_print: paged
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -17,7 +16,6 @@ knitr::opts_chunk$set(echo = TRUE)
 Investors need to move beyond the value-proposition of start-up companies in determining their success or failure to inform their investing strategies. As more information and data on start-ups is now available, investors want to discover factors from this information that affect the success of these start-up companies.
 
 The primary objective of this data analytics project is to identify these factors or attributes of successful start-up companies by performing some analytical procedures on many informational attributes acquired on 472 start-up companies. The aim is to get the data into a more useable format to perform some form of exploration and statistical tests.
-
 ```{r prepocessing, include=FALSE}
 library(dplyr)
 library(Amelia)
@@ -25,6 +23,7 @@ startup<- read.csv(file="data/CAX_Startup_Data.csv", header=TRUE,as.is=T)
 
 dim(startup)
 startup[startup=="No Info"]<- NA
+startup[startup=="Not Applicable"]<-NA
 startup[startup==""]<- NA
 
 NA_plot <- missmap(startup, legend = T, col = c('yellow','black'))
@@ -36,7 +35,6 @@ save(NA_plot,file = "fig/missing_value_plt.fig")
 The csv file read to R contained 472 observation of 116 variables on start-up companies. Majority of the variables were classified as characters with a few as integers. 
 
 Data frame had 264 rows of incomplete cases, i.e rows with NA values. Data also had values with “No Info” or blanks that needs to be changed to NA values. These values where replaced with NAs which increased the number of rows with incomplete cases to 456.The missing value plot is shown in Figure below.
-
 ```{r pressure, echo=FALSE}
 missmap(startup, legend = T, col = c('yellow','black'))
 ```
@@ -53,6 +51,8 @@ nrow(startup[!complete.cases(startup),])
 # converting column as date.....
 startup$Est..Founding.Date <- as.Date(startup$Est..Founding.Date, "%m/%d/%Y")
 startup$Last.Funding.Date <- as.Date(startup$Last.Funding.Date, "%m/%d/%Y")
+
+
 
 # display column header of data
 colnames(startup) 
@@ -88,15 +88,13 @@ new_startup<-startup[new_var]
 
 ```
 
-```{r echo=FALSE}
+```{r echo=FALSE, fig.height=5, fig.width=10}
 var_dropped
 ```
 
-2.  I dropped observation with more than 40% of the variables missing
+2.  I added back the 'Survival.through.recession..based.on.existence.of.the.company.through.recession.times' and renamed the variable as 'Survived.recessions'. The variable is key to recomputing the 'Age.of.company' to properly reflect the life of the company. 
 
-3.  I imputed the remaining missing values with the median for numeric variables and the mode for categorical variables
-
-
+3.  I imputed the remaining missing values with the median for numeric variables and the mode for categorical variables. The survived.recessions was imputed by referencing the Dependent variable, ideally most firms that failed with their founding date prior to the Dot.com bubble of 2000-2001 and great recession of 2008-2009 should have a value of 'No' and 'Yes' if the are successful.
 
 
 ```{r include=FALSE}
@@ -108,8 +106,41 @@ ncol(new_startup)#113
 other_var<-as.character(pcnt_mis_var$variable[which(pcnt_mis_var$Percent.Missing>40)])
 other_data<-startup[other_var]
 
-# Percent missing value for observations
-new_startup <- new_startup[which(rowMeans(!is.na(new_startup))>.4), ]
+new_startup$survived.recessions <- other_data$Survival.through.recession..based.on.existence.of.the.company.through.recession.times
+
+#Impute missing values for Survived.recessions based on year founding, and Dependent.Company.Status
+new_startup%>%select(Dependent.Company.Status,survived.recessions,Age.of.company.in.years,year.of.founding,Gartner.hype.cycle.stage)%>%
+  filter(Dependent.Company.Status=='Failed'& year.of.founding<2008)
+
+for (i in 1:length(new_startup$survived.recessions))
+{
+  if(is.na(new_startup$survived.recessions[i]) & is.na(new_startup$year.of.founding[i])){
+    is.na(new_startup$survived.recessions[i])}
+  else if(is.na(new_startup$survived.recessions[i]) & new_startup$year.of.founding[i] <= 2008 &
+             new_startup$Dependent.Company.Status[i]=='Failed') {
+    new_startup$survived.recessions[i]<- 'No'}
+  else if(is.na(new_startup$survived.recessions[i]) & new_startup$year.of.founding[i] >2008){
+    new_startup$survived.recessions[i]<- 'Post-Recession'}
+  else {new_startup$survived.recessions[i]}
+  } 
+
+
+#Recalculating age of company
+
+for (i in 1:length(new_startup$Age.of.company.in.years))
+{
+  if(is.na(new_startup$Age.of.company.in.years[i]) & is.na(new_startup$year.of.founding[i])){
+    new_startup$Age.of.company.in.years[i]}
+  else if(new_startup$year.of.founding[i] < 2001 & new_startup$survived.recessions[i]== 'No' &
+          !is.na(new_startup$Time.to.1st.investment..in.months.[i])) {
+    new_startup$Age.of.company.in.years[i]<- ceiling((new_startup$Time.to.1st.investment..in.months.[i])/12)}
+  else if(new_startup$year.of.founding[i] >= 2001 & new_startup$survived.recessions[i]== 'No' &
+          !is.na(new_startup$Time.to.1st.investment..in.months.[i])) {
+    new_startup$Age.of.company.in.years[i]<- ceiling((new_startup$Time.to.1st.investment..in.months.[i])/12)}
+  else {new_startup$Age.of.company.in.years[i]}
+} 
+
+#
 
 # writing new data as csv file
 save(new_startup,file = "rda/startup2_NA.rda")
@@ -125,145 +156,452 @@ I created two additional variables- Investor.count from as a sum of the total nu
 .	Specialization.of.highest.education- (multiple values but highest education will suffice)  
 .	Time.to.maturity.of.technology..in.years (this had only one value, hence low variability)  
 
+The categorical variables were encoded as factors.
+```{r preprocessing numeric variables, include=FALSE}
+library(dplyr)
+library(tidyverse)
+
+# Separate data frame for numeric variables, use the select_if()
+new_startup <-read.csv('na_processed_data.csv')
+cnt_df <- select_if(new_startup,is.numeric)
+str(cnt_df)
+
+# # separate data frame for character variables
+# cnt_var<-colnames(cnt_df)
+# var <- colnames(new_startup) %in% cnt_var 
+# char_df <- new_startup[!var]
+# 
+# str(char_df)
+
+# checking distribution of continuous variable for outlier detection and missing values
+summary(cnt_df)
+
+head(cnt_df)
+glimpse(cnt_df)
+
+
+
+
+```
+
+
+```{r preprocessing categorical variables, include=FALSE}
+library(dplyr)
+library(tidyverse)
+
+# Separate data frame for numeric variables, use the select_if()
+new_startup <-read.csv('na_processed_data.csv')
+cnt_df <- select_if(new_startup,is.numeric)
+
+
+# separate data frame for character variables
+cnt_var<-colnames(cnt_df)
+var <- colnames(new_startup) %in% cnt_var 
+char_df <- new_startup[!var]
+
+# checking distribution of categorical variable for missing values
+table(char_df$Local.or.global.player,useNA="always")
+table(char_df$Gartner.hype.cycle.stage, useNA = "always")
+
+# convert a variable to uppercase
+char_df$Local.or.global.player<-toupper(char_df$Local.or.global.player)
+
+cols <- c(2:3,6:72)
+for(i in cols)
+{
+  char_df[,i]<-toupper(char_df[,i])
+}
+
+# trimming white-spaces
+char_df$Local.or.global.player<-trimws(char_df$Local.or.global.player)
+
+# converting character variables to factors
+char_df$Local.or.global.player<- as.factor(char_df$Local.or.global.player)
+char_df$Degree.from.a.Tier.1.or.Tier.2.university.<-as.factor(char_df$Degree.from.a.Tier.1.or.Tier.2.university.)
+char_df$Number.of..of.Partners.of.company<-as.factor(char_df$Number.of..of.Partners.of.company)
+char_df$Cloud.or.platform.based.serive.product.<-as.factor(char_df$Cloud.or.platform.based.serive.product.)
+char_df$Average.size.of.companies.worked.for.in.the.past <- as.factor(char_df$Average.size.of.companies.worked.for.in.the.past)
+
+colnames(char_df)
+# using for loop to convert common variable vlaues as factors
+yes_no <- c(7,12,14,16:19,21,23,25,29,31:40,45,49:50,60:61,63:70,72)
+for(i in yes_no)
+{
+  char_df[,i]<-as.factor(char_df[,i])
+}
+hi_lo <- c(13,43,44,46,52,56:59,62)
+for(i in hi_lo)
+{
+  char_df[,i]<-as.factor(char_df[,i])
+}
+
+other_factors <- c(10,11,20,22,24,28,41,42,47)
+for(i in other_factors)
+{
+  char_df[,i]<-as.factor(char_df[,i])
+}
+
+
+# Create additional features like counting number of investors for company
+char_df$Investor.count<-length(strsplit(char_df$Investors, "|",fixed=T))
+for (i in (1:length(char_df$Investors)))
+{
+  if(is.na(char_df$Investors[i])==T){
+    char_df$Investor.count[i]<- NA}
+  else{
+    lst<-strsplit(char_df$Investors[i], "|", fixed=T)
+    char_df$Investor.count[i]<-length(lst[[1]])
+  } }
+
+# Create additional features like counting number of industries a startup belongs to
+char_df$Industry.count<-length(strsplit(char_df$Industry.of.company, "|",fixed=T))
+for (i in (1:length(char_df$Industry.of.company)))
+{
+  if(is.na(char_df$Industry.of.company[i])==T){
+    char_df$Industry.count[i]<- NA}
+  else{
+    lst<-strsplit(char_df$Industry.of.company[i], "|", fixed=T)
+    char_df$Industry.count[i]<-length(lst[[1]])
+  } }
+
+char_df$Investor.count<- as.factor(char_df$Investor.count)
+char_df$Dependent.Company.Status <- as.factor(char_df$Dependent.Company.Status)
+char_df$Focus.functions.of.company <- as.factor(char_df$Focus.functions.of.company)
+char_df$Industry.count <-as.factor(char_df$Industry.count)
+char_df$Disruptiveness.of.technology <-factor(char_df$Disruptiveness.of.technology, levels = (c("LOW","MEDIUM","HIGH")) )
+
+
+# function to calculate mode
+Mode <- function(x) {
+  u <- unique(na.omit(x))  # took me a while had to include this as I had NAs as highest frequency
+  u[which.max(tabulate(match(x, u)))]
+}
+
+# Filling missing values with mode
+char_df$Local.or.global.player[is.na(char_df$Local.or.global.player)]<-Mode(char_df$Local.or.global.player)
+table(char_df$Local.or.global.player)
+char_df$Gartner.hype.cycle.stage[is.na(char_df$Gartner.hype.cycle.stage)] <- Mode(char_df$Gartner.hype.cycle.stage)
+table(char_df$Gartner.hype.cycle.stage)
+
+
+#applying mode of each variable to their missing values
+
+for(char in 1:ncol(char_df)) {
+  char_df[is.na(char_df[,char]),char] <-Mode(char_df[,char])
+}
+
+save(char_df,file = "rda/char_df_processed.rda")
+# add back target variable to continuous data 
+cnt_df$Dependent.Company.Status <- new_startup$Dependent.Company.Status
+
+save(cnt_df,file="rda/cnt_var_processed.rda")
+
+```
 
 
 ##  Section 3: Graphical presentation of your exploration and its interpretation
 
+I used the histogram and boxplots to visualize the distribution of the continuous variables and also to check for outliers using facet-wraps in batches of 4-6 variables. I renamed some of the variables that were long.
 
-The outcome variable for the data frame is categorical and the graphs plotted were boxplots and histograms to understand visually the distribution of the startups and to check the distance of outliers. 
+```{r include=FALSE}
 
-```{r}
-library(ggplot2)
-char_df <-read.csv('rda/char_df_processed.rda')
-cnt_df <- read.csv('rda/cnt_var_processed.rda')
+cnt_df<-cnt_df%>%rename(Investors.Angel.or.VC= Number.of.Investors.in.Angel.and.or.VC,
+                        Repeat.Investors =Number.of.of.repeat.investors,
+                        No.of.Advisors = Number.of.of.advisors,
+                        No.of.Cofounders= Number.of.Co.founders,
+                        Investors.in.Seed =Number.of.Investors.in.Seed)
+cnt_df$Investor.count <- as.numeric(char_df$Investor.count)
+
+                       
 
 
-# boxplot of employee count
-boxplot(cnt_df$Employee.Count, main="box plot of employee count", 
-        ylab="Employee count")
+```
 
-# histogram with black outline, white fill and median line
 
-ggplot(cnt_df, aes(x=Employee.Count))+
-  geom_histogram(binwidth=5, colour="black", fill="white")+
-  geom_vline(aes(xintercept=median(Employee.Count, na.rm=T)),   
-             color="red", linetype="dashed", size=1)+
-  ggtitle("Histogram of Employee count")+
-  xlab("Employee Count") + 
-  ylab("Frequency")+
-  theme_light()
-colnames(cnt_df)
+```{r echo=FALSE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
 
-# Plot univariate distributions of independent variables using facet wrap
-names(cnt_df)
 cnt_df%>%
-  select(c(1:6))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
+  select(c(6,7,9,12,42,42))%>%
+  gather(-Dependent.Company.Status,key = key,value = value)%>%
+  ggplot(aes(value,fill=Dependent.Company.Status))+
+  ylab("Frequency") +
   facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
+  geom_histogram(alpha=0.2,color ='black')+
+  scale_x_continuous(trans = "sqrt" ) +
+  geom_vline(aes(xintercept= median(value, na.rm=T)),   
+             color="red", linetype="dashed") +
+  theme_bw()
 
 cnt_df%>%
-  select(c(7:12))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-cnt_df%>%
-  select(c(13:18))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-  
-cnt_df%>%
-  select(c(19:24))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-
-cnt_df%>%
-  select(c(25:30))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-
-cnt_df%>%
-  select(c(31:36))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-cnt_df%>%
-  select(c(37:41))%>%
-  gather()%>%
-  ggplot(aes(value,fill=value))+
-  facet_wrap(~key,scales = 'free') +
-  geom_histogram()+
-  geom_vline(aes(xintercept=median(value, na.rm=T)),   
-             color="red", linetype="dashed")
-#colnames(cnt_df[c(37:41)])
-# box plot to see differnce in mean of team size w.r.t two categories of dependent
-ggplot(cnt_df, aes(x=Dependent.Company.Status,y=Team.size.all.employees, 
-                   fill=Dependent.Company.Status)) + 
-  geom_boxplot()
-
-# Creating boxplots of continuous variables using facet wrap
-cnt_df%>%
-  select(c(1:6,42))%>%
+  select(c(6,7,9,12,42,43))%>%
   gather(-Dependent.Company.Status, key = "var",value = "value")%>%
   ggplot(aes(x = value,y = Dependent.Company.Status, 
              fill=Dependent.Company.Status))+
   geom_boxplot()+
   facet_wrap(~var,scales = 'free') +
+  scale_x_continuous(trans = "sqrt" ) +
+  theme_bw()
+
+```
+_Figure 1 Investor variable set_
+
+The histograms are skewed to the right and there boxplots showed outliers that needs to be capped. This was achieved using the maximum values of each variable with respect to their categories.The plots also revealed that on average Successful startups attracted more investors in total and in all categories than failed startups, except fot the investor.count variable were it looks as if there is little or no difference in means. This variable we will investigate further for statistical significance in selecting our predictor variable.
+
+
+```{r echo=FALSE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE, paged.print=TRUE}
+
+cnt_df%>%
+  select(c(4,11,23,42))%>%
+  gather(-Dependent.Company.Status,key = key,value = value)%>%
+  ggplot(aes(value,fill=Dependent.Company.Status))+
+  ylab("Frequency") +
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram(alpha =0.5,color ='black',binwidth = 1)+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed") +
+  scale_x_continuous(trans = "sqrt" )+
   theme_bw()
 
 cnt_df%>%
-  select(c(7:12,42))%>%
+  select(c(4,11,23,42))%>%
   gather(-Dependent.Company.Status, key = "var",value = "value")%>%
   ggplot(aes(x = value,y = Dependent.Company.Status, 
              fill=Dependent.Company.Status))+
   geom_boxplot()+
   facet_wrap(~var,scales = 'free') +
+  scale_x_continuous(trans = "sqrt" )+
+  theme_bw()
+```
+_Figure 2 Employee variable set_
+
+For the employee variable set, the plots reveal a right tail while the boxplots suggest little or no difference in means between the two classes of dependent variable. This will also be investigated for their statistical significance towards variable selection.  
+
+
+```{r echo=FALSE, fig.height=5, fig.width=10, paged.print=FALSE}
+
+cnt_df<-cnt_df%>%rename(Last.Round.Funding.Amt = Last.Funding.Amount,
+                        Avg.time.to.inv.all.rounds =Avg.time.to.investment...average.across.all.rounds..measured.from.previous.investment)%>%
+  mutate( Last.Round.Funding.Amt=Last.round.of.funding.received..in.milionUSD.*1000000)
+
+```
+
+
+```{r echo=FALSE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE, paged.print=TRUE}
+cnt_df%>%
+  select(c(2,5,25,26,42))%>%
+  gather(-Dependent.Company.Status,key = key,value = value)%>%
+  ggplot(aes(value,fill=Dependent.Company.Status))+
+  ylab("Frequency") +
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram(alpha =0.5,color ='black')+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed") +
+  scale_x_continuous(trans = "sqrt" )+
   theme_bw()
 
 cnt_df%>%
-  select(c(13:18,42))%>%
+  select(c(2,5,25,26,42))%>%
   gather(-Dependent.Company.Status, key = "var",value = "value")%>%
   ggplot(aes(x = value,y = Dependent.Company.Status, 
              fill=Dependent.Company.Status))+
   geom_boxplot()+
   facet_wrap(~var,scales = 'free') +
+  scale_x_continuous(trans = "sqrt" )+
+  theme_bw()
+
+
+```
+_Fig 3 Age of Company, Time to invest and Last Round Funding Amount_
+
+
+```{r echo=FALSE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
+cnt_df%>%
+  select(c(27:32,42))%>%
+  gather(-Dependent.Company.Status,key = key,value = value)%>%
+  ggplot(aes(value,fill=Dependent.Company.Status))+
+  ylab("Frequency") +
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram(alpha =0.5,color ='black')+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed") +
+  scale_x_continuous(trans = "sqrt" )+
   theme_bw()
 
 cnt_df%>%
-  select(c(19:24,42))%>%
+  select(c(27:32,42))%>%
   gather(-Dependent.Company.Status, key = "var",value = "value")%>%
   ggplot(aes(x = value,y = Dependent.Company.Status, 
              fill=Dependent.Company.Status))+
   geom_boxplot()+
   facet_wrap(~var,scales = 'free') +
+  scale_x_continuous(trans = "sqrt" )+
+  theme_bw()
+
+```
+
+```{r echo=FALSE, fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
+cnt_df%>%
+  select(c(33:39,19,42))%>%
+  gather(-Dependent.Company.Status,key = key,value = value)%>%
+  ggplot(aes(value,fill=Dependent.Company.Status))+
+  ylab("Frequency") +
+  facet_wrap(~key,scales = 'free') +
+  geom_histogram(alpha =0.5,color ='black')+
+  geom_vline(aes(xintercept=median(value, na.rm=T)),   
+             color="red", linetype="dashed") +
+  scale_x_continuous(trans = "sqrt" )+
   theme_bw()
 
 cnt_df%>%
-  select(c(25:30,42))%>%
+  select(c(33:39,19,42))%>%
   gather(-Dependent.Company.Status, key = "var",value = "value")%>%
   ggplot(aes(x = value,y = Dependent.Company.Status, 
              fill=Dependent.Company.Status))+
   geom_boxplot()+
   facet_wrap(~var,scales = 'free') +
+  scale_x_continuous(trans = "sqrt" )+
   theme_bw()
+
+```
+
+_Fig 5 skills set variables_  
+
+The plots for the percent skills for 'Consulting,Finance and Law revealed that close to 90% of startups have no skill in this area and hence may not be a great predictor of the target variable. These variables will be dropped. 
+The boxplots of percent skills for entrepreneurship,operations,Domain, Marketing and Sales suggests there may be little or no difference in the means for the two classes.This will be investigated further using the t-test. 
+
+```{r include=FALSE}
+summary(cnt_df$Team.size.all.employees)
+quantile(cnt_df$Team.size.all.employees, probs = seq(0, 1, by= 0.05),na.rm=T)
+
+# further exploration to determine cutoff for capping
+quantile(cnt_df$Team.size.all.employees, probs = seq(.9, 1, by= 0.01),na.rm=T)
+
+quants <- seq(0,1,.1)
+
+#using apply function to get the quantiles of the variables in a dataframe
+qunt_df <- t(apply( cnt_df[2:36] , 2 , quantile , probs = quants , na.rm = TRUE ))
+qunt_df <- as.data.frame(qunt_df[c(3:4,11,15,16,20,22:24),])
+
+quantile(cnt_df$Percent_skill_Engineering, probs = seq(0.9, 1, by= 0.01),na.rm=T)
+
+
+# capping some outlier values  
+cnt_df$Team.size.all.employees[cnt_df$Team.size.all.employees>106.4]<-106
+cnt_df$Internet.Activity.Score[cnt_df$Internet.Activity.Score<0]<-0
+cnt_df$Internet.Activity.Score[cnt_df$Internet.Activity.Score>100]<-100
+cnt_df$Employee.Count[cnt_df$Employee.Count>211.8] <-211
+cnt_df$Skills.score[cnt_df$Skills.score>53.45]<-53
+cnt_df$Number.of.Recognitions.for.Founders.and.Co.founders[cnt_df$Number.of.Recognitions.for.Founders.and.Co.founders>
+                                                             107.5]<-107
+cnt_df$Employees.per.year.of.company.existence[
+  cnt_df$Employees.per.year.of.company.existence>76.14
+]<- 76
+cnt_df$Time.to.1st.investment..in.months.[cnt_df$Time.to.1st.investment..in.months.>48]<-48
+cnt_df$Avg.time.to.inv.all.rounds[ cnt_df$Avg.time.to.inv.all.rounds>48] <- 48
+
+cnt_df$Percent_skill_Entrepreneurship[cnt_df$Percent_skill_Entrepreneurship>30.4]<-30
+cnt_df$Percent_skill_Engineering[cnt_df$Percent_skill_Engineering>76]<-75
+
+# Missing value treatemnt using median
+cnt_df$Team.size.all.employees[is.na(cnt_df$Team.size.all.employees)]<-median(cnt_df$Team.size.all.employees,na.rm=T)
+any(is.na(cnt_df$Team.size.all.employees))
+
+# Using median for NA values
+impute.med <- function(x) {
+  z <- median(x, na.rm = TRUE)
+  x[is.na(x)] <- z
+  return(x)
+}
+
+# Applying median value to missing values in dataframe
+nums <-c(1:36)
+cnt_df[nums] <- sapply(cnt_df[nums], function(x){
+  if(any(is.na(x))){
+    impute.med(x)
+  } else {
+    x
+  }
+}
+)
+
+```
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+```
+
+
+
+##  Section 4: Summary of your exploration 
+
+In this project, we prepared the raw data for further analysis by looking at the structure of the data to better understand the variables, the state of the values and how complete they are. We removed a few variables and some observations that had a greater percentage of missing values, classified the numeric variables and performed some summary statistics to check for outliers in numeric variables which were replaced with the reasonable values, and missing values (NAs) substituted with the median. The missing values in the categorical variables were also substituted with the mode. 
+
+Hypothesis testing were conducted to observe the mean of the two groups of startups to ensure that they are different. Two-sided t-tests were conducted on the continuous variables and 19 out of 42 variables had p-values below 0.05% and were selected for use. See table below.
+
+```{r echo=FALSE}
+
+library(broom)
+ab <-t.test(Team.size.all.employees~Dependent.Company.Status, data=cnt_df)
+
+#select variables that have the two samples means almost equal for t-test and variabled seletion
+# efficiently selecting relevant variables from t-test results
+
+var_seleection <- cnt_df%>%
+  gather(-Dependent.Company.Status, key = "var",value = "value")%>%
+  group_by(var)%>%
+  do(tidy(t.test(value~ Dependent.Company.Status, data=.)))
+
+var_selection <-as.data.frame(var_seleection)
+var_less_0.05<- var_seleection%>%filter(p.value <= 0.05)%>%select(statistic,p.value)
+var_above_0.05<- var_seleection%>%filter(p.value >0.05)
+
+var_less_0.05
+### Select Variables with p-value below 0.05
+new_cnt_var<-var_less_0.05$var
+
+cnt_df_new<-cnt_df[,new_cnt_var]
+
+
+
+```
+_Table 4.1 Continuous Variables selected with P Value less than 0.05_
+
+
+
+
+I also executed a chi-squared test was on the categorical variables to select 51 variables for the model. see Table below.
+
+
+```{r echo=FALSE}
+# tabulating data for chi-sq test
+tab<- table(char_df$Dependent.Company.Status,char_df$Local.or.global.player)
+
+# chi-sq test
+tidy(chisq.test(tab))
+
+# apply simultaneously to select variables
+
+chisq<-as.data.frame(lapply(char_df[,-1], function(x) chisq.test(table(x,char_df$Dependent.Company.Status), 
+                                                                 simulate.p.value = TRUE)$p.value))
+
+row.names(chisq)<- "p.values"
+chisq_t <-as.data.frame(t(chisq))
+pv.less.0.05 <- t(chisq_t%>%filter(p.values <0.05))
+t.pv.less.0.05 <-as.data.frame(t(pv.less.0.05))
+head(t.pv.less.0.05,10)
+char.cols.sel <- colnames(pv.less.0.05)
+
+
+new.char_df <-char_df[,c(char.cols.sel,"Dependent.Company.Status")]
+
+# combine the new continuous variables dataframe with the categorical variables dataframe
+
+final_df <-cbind(cnt_df_new,new.char_df)
+
+write.csv(final_df,"startup_final_data.csv",row.names=F)
+```
+
+The continuous variables data frame with the selected variables were combined with the categorical variables data frame to make-up a data frame of 75 variables (including the outcome variable and 472 observations to develop the machine learning model. 
